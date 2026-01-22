@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -104,6 +105,13 @@ func (m *Manager) scrapeAll() {
 func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	path := strings.TrimLeft(reqCfg.ApiPath, "/")
 	url := m.cfg.GithubAPIURL + "/" + path
+
+	if strings.Contains(url, "?") {
+		url = fmt.Sprintf("%s&_t=%d", url, time.Now().Unix())
+	} else {
+		url = fmt.Sprintf("%s?_t=%d", url, time.Now().Unix())
+	}
+
 	method := reqCfg.Method
 	if method == "" {
 		method = "GET"
@@ -123,6 +131,9 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	}
 
 	req.Header.Set("User-Agent", "eleboucher-github-exporter/1.0")
+	req.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("Expires", "0")
 
 	if m.token != "" {
 		req.Header.Add("Authorization", "Bearer "+m.token)
