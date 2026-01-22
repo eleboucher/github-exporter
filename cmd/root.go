@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	cfgFile string
-	port    string
+	cfgFile    string
+	port       string
+	githubUser string
 )
 
 var rootCmd = &cobra.Command{
@@ -20,7 +21,7 @@ var rootCmd = &cobra.Command{
 	Short: "A generic GitHub Prometheus exporter",
 	Long:  `Scrapes GitHub API endpoints based on a YAML configuration and exposes them as Prometheus metrics.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := config.Load(cfgFile)
+		cfg, err := config.Load(cfgFile, githubUser)
 		if err != nil {
 			log.Fatalf("Error loading config file: %v", err)
 		}
@@ -45,5 +46,6 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config.yaml", "config file path")
+	rootCmd.PersistentFlags().StringVar(&githubUser, "github-user", "", "GitHub username")
 	rootCmd.PersistentFlags().StringVar(&port, "port", "2112", "port to listen on")
 }

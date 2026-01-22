@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"os"
+	"strings"
+	"text/template"
 	"time"
 
 	"github.com/caarlos0/env/v10"
@@ -37,13 +40,35 @@ type Config struct {
 	Requests       []RequestConfig `yaml:"requests"`
 }
 
-func Load(path string) (*Config, error) {
+func getEnvMap(githubUser string) map[string]string {
+	items := make(map[string]string)
+	for _, item := range os.Environ() {
+		splits := strings.SplitN(item, "=", 2)
+		if len(splits) == 2 {
+			items[splits[0]] = splits[1]
+		}
+	}
+	if githubUser != "" {
+		items["GITHUB_USER"] = githubUser
+	}
+	return items
+}
+
+func Load(path string, githubUser string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	tmpl, err := template.New("config").Parse(string(data))
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, getEnvMap(githubUser)); err != nil {
+		return nil, err
+	}
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := yaml.Unmarshal(buf.Bytes(), &cfg); err != nil {
 		return nil, err
 	}
 

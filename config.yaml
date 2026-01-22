@@ -2,7 +2,7 @@
 scrape_interval: "15m"
 
 requests:
-  - api_path: "/users/eleboucher"
+  - api_path: "/users/{{ .GITHUB_USER }}"
     metrics:
       - name: github_followers
         path: "followers" # JSON path
@@ -11,7 +11,7 @@ requests:
         path: "public_repos"
         help: "Public repositories"
 
-  - api_path: "/users/eleboucher/repos?per_page=100"
+  - api_path: "/users/{{ .GITHUB_USER }}/repos?per_page=100"
     metrics:
       - name: github_stars_total
         path: "#.stargazers_count"
@@ -21,7 +21,7 @@ requests:
   - api_path: "/graphql"
     method: "POST"
     body: |
-      { "query": "query { user(login: \"eleboucher\") { contributionsCollection { contributionCalendar { totalContributions } } } }" }
+      { "query": "query { user(login: \"{{ .GITHUB_USER }}\") { contributionsCollection { contributionCalendar { totalContributions } } } }" }
     metrics:
       - name: gh_contributions_last_year
         path: "data.user.contributionsCollection.contributionCalendar.totalContributions"
