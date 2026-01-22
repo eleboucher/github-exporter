@@ -12,3 +12,5 @@ WORKDIR /app
 COPY --from=builder /app/github-exporter .
 USER nobody:nogroup
 ENTRYPOINT ["/app/github-exporter"]
+
+CMD ["--config", "/config/config.yaml"]
