@@ -4,6 +4,7 @@ go 1.25.5
 
 require (
 	github.com/caarlos0/env/v10 v10.0.0
+	github.com/caarlos0/env/v11 v11.3.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.2
 	github.com/tidwall/gjson v1.18.0
