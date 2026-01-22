@@ -38,10 +38,14 @@ var rootCmd = &cobra.Command{
 		mgr.Start(ctx)
 
 		log.Printf("Exporter listening on port %s", port)
-		http.Handle("/metrics", promhttp.Handler())
-		if err := http.ListenAndServe(":"+port, nil); err != nil {
-			log.Fatal(err)
-		}
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			if err := http.ListenAndServe(":"+port, nil); err != nil {
+				log.Fatal(err)
+			}
+		}()
+		<-ctx.Done()
+		stop()
 	},
 }
 
