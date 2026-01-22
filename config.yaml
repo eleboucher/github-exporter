@@ -1,6 +1,4 @@
 # config.yaml
-scrape_interval: "15m"
-
 requests:
   - api_path: "/users/{{ .GITHUB_USER }}"
     metrics:
