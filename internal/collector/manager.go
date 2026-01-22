@@ -53,6 +53,7 @@ func (m *Manager) InitMetrics() {
 			m.metricMap[metric.Name] = gauge
 		}
 	}
+	prometheus.MustRegister(m.scrapeErrors)
 }
 
 func (m *Manager) Start() {
@@ -130,7 +131,12 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 		return
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		slog.Error("Error reading response body", "url", url, "err", err)
+		m.scrapeErrors.Inc()
+		return
+	}
 	jsonStr := string(body)
 
 	for _, metric := range reqCfg.Metrics {
