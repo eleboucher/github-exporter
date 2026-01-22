@@ -7,7 +7,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/caarlos0/env/v10"
+	"github.com/caarlos0/env/v11"
 	"gopkg.in/yaml.v3"
 )
 

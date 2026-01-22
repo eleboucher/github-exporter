@@ -56,6 +56,8 @@ requests:
         path: "#.stargazers_count" # GJSON: Get all stargazer counts
         aggregate: "sum"           # Options: sum, count, max
         help: "Total stars across all repositories"
+```
+
 ### GraphQL Example
 Fetches the "Green Squares" (Contribution Calendar).
 
