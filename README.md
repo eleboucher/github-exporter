@@ -2,7 +2,7 @@
 
 ![Go Version](https://img.shields.io/badge/go-1.25-blue)
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-Apache2-green)
 
 A **generic, configuration-driven** Prometheus exporter for GitHub.
 
