@@ -10,6 +10,7 @@ import (
 
 	"github.com/eleboucher/github-exporter/internal/collector"
 	"github.com/eleboucher/github-exporter/internal/config"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 )
@@ -32,13 +33,12 @@ var rootCmd = &cobra.Command{
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-
-		mgr := collector.NewManager(cfg)
-		mgr.InitMetrics()
-		mgr.Start(ctx)
-
 		log.Printf("Exporter listening on port %s", port)
+
 		go func() {
+			mgr := collector.NewManager(cfg)
+
+			prometheus.MustRegister(mgr)
 			http.Handle("/metrics", promhttp.Handler())
 			if err := http.ListenAndServe(":"+port, nil); err != nil {
 				log.Fatal(err)

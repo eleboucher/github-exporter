@@ -1,11 +1,11 @@
 package collector
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -15,94 +15,81 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+type MetricInfo struct {
+	Desc      *prometheus.Desc
+	LabelKeys []string
+	Config    config.MetricConfig
+}
+
 type Manager struct {
-	cfg          *config.Config
-	client       *http.Client
-	metricMap    map[string]*prometheus.GaugeVec
-	token        string
-	scrapeErrors prometheus.Counter
-	semaphore    chan struct{}
+	cfg     *config.Config
+	client  *http.Client
+	metrics map[string]*MetricInfo
+	token   string
 }
 
 func NewManager(cfg *config.Config) *Manager {
-	return &Manager{
-		cfg:       cfg,
-		client:    &http.Client{Timeout: 10 * time.Second},
-		metricMap: make(map[string]*prometheus.GaugeVec),
-		token:     cfg.Token,
-		scrapeErrors: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "github_exporter_scrape_errors_total",
-			Help: "Total number of scrape errors",
-		}),
-		semaphore: make(chan struct{}, 10),
+	m := &Manager{
+		cfg:     cfg,
+		client:  &http.Client{Timeout: 10 * time.Second},
+		metrics: make(map[string]*MetricInfo),
+		token:   cfg.Token,
 	}
+	m.initDescriptors()
+	return m
 }
 
-func (m *Manager) InitMetrics() {
+func (m *Manager) initDescriptors() {
 	for _, req := range m.cfg.Requests {
 		for _, metric := range req.Metrics {
-			labelKeys := []string{"api_path"}
+			var labelKeys []string
+			labelKeys = append(labelKeys, "api_path")
 			for k := range metric.Labels {
 				labelKeys = append(labelKeys, k)
 			}
-			gauge := prometheus.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: metric.Name,
-					Help: metric.Help,
-				},
+			sort.Strings(labelKeys)
+
+			desc := prometheus.NewDesc(
+				metric.Name,
+				metric.Help,
 				labelKeys,
+				nil,
 			)
 
-			if err := prometheus.Register(gauge); err != nil {
-				slog.Error("Failed to register metric", "name", metric.Name, "error", err)
-				continue
+			m.metrics[metric.Name] = &MetricInfo{
+				Desc:      desc,
+				LabelKeys: labelKeys,
+				Config:    metric,
 			}
-			m.metricMap[metric.Name] = gauge
 		}
-	}
-	if err := prometheus.Register(m.scrapeErrors); err != nil {
-		slog.Error("Failed to register scrape errors counter", "error", err)
 	}
 }
 
-func (m *Manager) Start(ctx context.Context) {
-	slog.Info("Starting Collector. Interval", "interval", m.cfg.ScrapeInterval)
-
-	m.scrapeAll()
-
-	ticker := time.NewTicker(m.cfg.GetDuration())
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				slog.Info("Starting scheduled scrape")
-				m.scrapeAll()
-			case <-ctx.Done():
-				slog.Info("Stopping collector", "reason", ctx.Err())
-				return
-			}
-		}
-	}()
+func (m *Manager) Describe(ch chan<- *prometheus.Desc) {
+	for _, info := range m.metrics {
+		ch <- info.Desc
+	}
 }
 
-func (m *Manager) scrapeAll() {
+func (m *Manager) Collect(ch chan<- prometheus.Metric) {
 	var wg sync.WaitGroup
+
+	semaphore := make(chan struct{}, 5)
+
 	for _, req := range m.cfg.Requests {
 		wg.Add(1)
 		go func(r config.RequestConfig) {
-			m.semaphore <- struct{}{}
-			defer func() {
-				<-m.semaphore
-				wg.Done()
-			}()
-			m.fetchAndProcess(r)
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			m.fetchAndCollect(r, ch)
 		}(req)
 	}
 	wg.Wait()
 }
 
-func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
+func (m *Manager) fetchAndCollect(reqCfg config.RequestConfig, ch chan<- prometheus.Metric) {
 	path := strings.TrimLeft(reqCfg.ApiPath, "/")
 	url := m.cfg.GithubAPIURL + "/" + path
 
@@ -117,7 +104,6 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 		method = "GET"
 	}
 
-	// Prepare Body (if any)
 	var bodyReader io.Reader
 	if reqCfg.Body != "" {
 		bodyReader = strings.NewReader(reqCfg.Body)
@@ -126,14 +112,12 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	req, err := http.NewRequest(method, url, bodyReader)
 	if err != nil {
 		slog.Error("Error creating request for", "url", url, "err", err)
-		m.scrapeErrors.Inc()
 		return
 	}
 
 	req.Header.Set("User-Agent", "eleboucher-github-exporter/1.0")
 	req.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	req.Header.Set("Pragma", "no-cache")
-	req.Header.Set("Expires", "0")
 
 	if m.token != "" {
 		req.Header.Add("Authorization", "Bearer "+m.token)
@@ -146,7 +130,6 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	resp, err := m.client.Do(req)
 	if err != nil {
 		slog.Error("Error fetching", "url", url, "err", err)
-		m.scrapeErrors.Inc()
 		return
 	}
 	defer func() {
@@ -157,31 +140,54 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		slog.Error("Non-200 status code from", "url", url, "status_code", resp.StatusCode)
-		m.scrapeErrors.Inc()
 		return
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		slog.Error("Error reading response body", "url", url, "err", err)
-		m.scrapeErrors.Inc()
 		return
 	}
 	jsonStr := string(body)
-
+	slog.Debug("Fetched data", "url", url, "body", jsonStr)
 	for _, metric := range reqCfg.Metrics {
+		info, exists := m.metrics[metric.Name]
+		if !exists {
+			continue
+		}
+
 		val := m.parseValue(jsonStr, metric)
 
 		slog.Debug("Parsed metric", "name", metric.Name, "value", val)
-		labels := prometheus.Labels{"api_path": reqCfg.ApiPath}
-		for labelName, jsonPath := range metric.Labels {
-			res := gjson.Get(jsonStr, jsonPath)
-			labels[labelName] = res.String()
+		var labelValues []string
+		for _, key := range info.LabelKeys {
+			if key == "api_path" {
+				labelValues = append(labelValues, reqCfg.ApiPath)
+				continue
+			}
+			// Look up the GJSON path for this label
+			if jsonPath, ok := metric.Labels[key]; ok {
+				res := gjson.Get(jsonStr, jsonPath)
+				labelValues = append(labelValues, res.String())
+			} else {
+				labelValues = append(labelValues, "")
+			}
 		}
 
-		if gauge, ok := m.metricMap[metric.Name]; ok {
-			gauge.With(labels).Set(val)
+		mType := prometheus.GaugeValue
+
+		m, err := prometheus.NewConstMetric(
+			info.Desc,
+			mType,
+			val,
+			labelValues...,
+		)
+		if err != nil {
+			slog.Error("Failed to create metric", "name", metric.Name, "err", err)
+			continue
 		}
+
+		ch <- m
 	}
 }
 

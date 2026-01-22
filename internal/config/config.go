@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/caarlos0/env/v11"
 	"gopkg.in/yaml.v3"
@@ -44,10 +43,9 @@ type RequestConfig struct {
 }
 
 type Config struct {
-	GithubAPIURL   string          `env:"GITHUB_API_URL" yaml:"github_api_url" `
-	Token          string          `env:"GITHUB_TOKEN" yaml:"github_token"`
-	ScrapeInterval string          `yaml:"scrape_interval"`
-	Requests       []RequestConfig `yaml:"requests"`
+	GithubAPIURL string          `env:"GITHUB_API_URL" yaml:"github_api_url" `
+	Token        string          `env:"GITHUB_TOKEN" yaml:"github_token"`
+	Requests     []RequestConfig `yaml:"requests"`
 }
 
 func getEnvMap(githubUser string) map[string]string {
@@ -86,21 +84,9 @@ func Load(path string, githubUser string) (*Config, error) {
 		return nil, err
 	}
 
-	if cfg.ScrapeInterval == "" {
-		cfg.ScrapeInterval = "15m"
-	}
-
 	if cfg.GithubAPIURL == "" {
 		cfg.GithubAPIURL = DefaultGitHubAPIURL
 	}
 	cfg.GithubAPIURL = strings.TrimRight(cfg.GithubAPIURL, "/")
 	return &cfg, nil
-}
-
-func (c *Config) GetDuration() time.Duration {
-	d, _ := time.ParseDuration(c.ScrapeInterval)
-	if d == 0 {
-		return 15 * time.Minute
-	}
-	return d
 }
