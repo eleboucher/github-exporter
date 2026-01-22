@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o github-exporter
 
 # Run Stage
 FROM alpine:latest
-WORKDIR /root/
+WORKDIR /app
 COPY --from=builder /app/github-exporter .
-EXPOSE 2112
+USER nobody:nogroup
 CMD ["./github-exporter"]

@@ -17,6 +17,8 @@ const (
 	AggregateSum   AggregateType = "sum"
 	AggregateCount AggregateType = "count"
 	AggregateMax   AggregateType = "max"
+
+	DefaultGitHubAPIURL = "https://api.github.com"
 )
 
 type MetricConfig struct {
@@ -35,6 +37,7 @@ type RequestConfig struct {
 }
 
 type Config struct {
+	GithubAPIURL   string          `env:"GITHUB_API_URL" yaml:"github_api_url" `
 	Token          string          `env:"GITHUB_TOKEN" yaml:"github_token"`
 	ScrapeInterval string          `yaml:"scrape_interval"`
 	Requests       []RequestConfig `yaml:"requests"`
@@ -75,10 +78,15 @@ func Load(path string, githubUser string) (*Config, error) {
 	if err := env.Parse(&cfg); err != nil {
 		return nil, err
 	}
+
 	if cfg.ScrapeInterval == "" {
 		cfg.ScrapeInterval = "15m"
 	}
 
+	if cfg.GithubAPIURL == "" {
+		cfg.GithubAPIURL = DefaultGitHubAPIURL
+	}
+	cfg.GithubAPIURL = strings.TrimRight(cfg.GithubAPIURL, "/")
 	return &cfg, nil
 }
 

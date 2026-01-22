@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eleboucher/github-exporter/internal/config"
@@ -13,10 +14,11 @@ import (
 )
 
 type Manager struct {
-	cfg       *config.Config
-	client    *http.Client
-	metricMap map[string]*prometheus.GaugeVec
-	token     string
+	cfg          *config.Config
+	client       *http.Client
+	metricMap    map[string]*prometheus.GaugeVec
+	token        string
+	scrapeErrors prometheus.Counter
 }
 
 func NewManager(cfg *config.Config) *Manager {
@@ -25,21 +27,26 @@ func NewManager(cfg *config.Config) *Manager {
 		client:    &http.Client{Timeout: 10 * time.Second},
 		metricMap: make(map[string]*prometheus.GaugeVec),
 		token:     cfg.Token,
+		scrapeErrors: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "github_exporter_scrape_errors_total",
+			Help: "Total number of scrape errors",
+		}),
 	}
 }
 
 func (m *Manager) InitMetrics() {
 	for _, req := range m.cfg.Requests {
 		for _, metric := range req.Metrics {
-			if _, exists := m.metricMap[metric.Name]; !exists {
-				gauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			gauge := prometheus.NewGaugeVec(
+				prometheus.GaugeOpts{
 					Name: metric.Name,
 					Help: metric.Help,
-				}, []string{"api_path"})
+				},
+				[]string{"api_path"},
+			)
 
-				prometheus.MustRegister(gauge)
-				m.metricMap[metric.Name] = gauge
-			}
+			prometheus.MustRegister(gauge)
+			m.metricMap[metric.Name] = gauge
 		}
 	}
 }
@@ -58,13 +65,20 @@ func (m *Manager) Start() {
 }
 
 func (m *Manager) scrapeAll() {
+	var wg sync.WaitGroup
 	for _, req := range m.cfg.Requests {
-		m.fetchAndProcess(req)
+		wg.Add(1)
+		go func(r config.RequestConfig) {
+			defer wg.Done()
+			m.fetchAndProcess(r)
+		}(req)
 	}
+	wg.Wait()
 }
 
 func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
-	url := "https://api.github.com" + reqCfg.ApiPath
+	path := strings.TrimLeft(reqCfg.ApiPath, "/")
+	url := m.cfg.GithubAPIURL + "/" + path
 	method := reqCfg.Method
 	if method == "" {
 		method = "GET"
@@ -76,13 +90,19 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 		bodyReader = strings.NewReader(reqCfg.Body)
 	}
 
-	req, _ := http.NewRequest(method, url, bodyReader)
+	req, err := http.NewRequest(method, url, bodyReader)
+	if err != nil {
+		log.Printf("Error creating request for %s: %v", url, err)
+		m.scrapeErrors.Inc()
+		return
+	}
+
+	req.Header.Set("User-Agent", "eleboucher-github-exporter/1.0")
 
 	if m.token != "" {
 		req.Header.Add("Authorization", "Bearer "+m.token)
 	}
 
-	// IMPORTANT: GraphQL requires JSON content type
 	if method == "POST" {
 		req.Header.Add("Content-Type", "application/json")
 	}
@@ -90,14 +110,20 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	resp, err := m.client.Do(req)
 	if err != nil {
 		log.Printf("Error fetching %s: %v", url, err)
+		m.scrapeErrors.Inc()
 		return
 	}
 	defer func() {
-		err = resp.Body.Close()
-		if err != nil {
+		if err := resp.Body.Close(); err != nil {
 			log.Printf("Error closing response body: %v", err)
 		}
 	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("Non-200 status code from %s: %d", url, resp.StatusCode)
+		m.scrapeErrors.Inc()
+		return
+	}
 
 	body, _ := io.ReadAll(resp.Body)
 	jsonStr := string(body)
@@ -124,9 +150,12 @@ func (m *Manager) parseValue(jsonStr string, metric config.MetricConfig) float64
 	case "count":
 		return float64(len(results))
 	case "max":
-		for _, r := range results {
-			if r.Float() > val {
-				val = r.Float()
+		if len(results) > 0 {
+			val = results[0].Float()
+			for _, r := range results[1:] {
+				if r.Float() > val {
+					val = r.Float()
+				}
 			}
 		}
 	case "sum": // default
