@@ -2,7 +2,7 @@ package collector
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -56,13 +56,14 @@ func (m *Manager) InitMetrics() {
 }
 
 func (m *Manager) Start() {
-	log.Printf("Starting Collector. Interval: %s", m.cfg.ScrapeInterval)
+	slog.Info("Starting Collector. Interval", "interval", m.cfg.ScrapeInterval)
 
 	m.scrapeAll()
 
 	ticker := time.NewTicker(m.cfg.GetDuration())
 	go func() {
 		for range ticker.C {
+			slog.Info("Starting scheduled scrape")
 			m.scrapeAll()
 		}
 	}()
@@ -96,7 +97,7 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 
 	req, err := http.NewRequest(method, url, bodyReader)
 	if err != nil {
-		log.Printf("Error creating request for %s: %v", url, err)
+		slog.Error("Error creating request for", "url", url, "err", err)
 		m.scrapeErrors.Inc()
 		return
 	}
@@ -113,18 +114,18 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 
 	resp, err := m.client.Do(req)
 	if err != nil {
-		log.Printf("Error fetching %s: %v", url, err)
+		slog.Error("Error fetching", "url", url, "err", err)
 		m.scrapeErrors.Inc()
 		return
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("Error closing response body: %v", err)
+			slog.Error("Error closing response body", "err", err)
 		}
 	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("Non-200 status code from %s: %d", url, resp.StatusCode)
+		slog.Error("Non-200 status code from", "url", url, "status_code", resp.StatusCode)
 		m.scrapeErrors.Inc()
 		return
 	}
@@ -135,6 +136,7 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	for _, metric := range reqCfg.Metrics {
 		val := m.parseValue(jsonStr, metric.Path, metric.Aggregate) // Simplified signature
 
+		slog.Debug("Parsed metric", "name", metric.Name, "value", val)
 		labels := prometheus.Labels{"api_path": reqCfg.ApiPath}
 		for labelName, jsonPath := range metric.Labels {
 			res := gjson.Get(jsonStr, jsonPath)
@@ -156,6 +158,7 @@ func (m *Manager) parseValue(jsonStr string, path string, agg config.AggregateTy
 	if result.Type == gjson.String {
 		t, err := time.Parse(time.RFC3339, result.String())
 		if err == nil {
+			slog.Debug("Parsed time", "value", result.String(), "unix", t.Unix())
 			return float64(t.Unix())
 		}
 	}
