@@ -22,11 +22,11 @@ const (
 )
 
 type MetricConfig struct {
-	Name string `yaml:"name"`
-	Path string `yaml:"path"`
-
-	Help      string        `yaml:"help"`
-	Aggregate AggregateType `yaml:"aggregate"` // sum, count, max
+	Name      string            `yaml:"name"`
+	Path      string            `yaml:"path"`
+	Help      string            `yaml:"help"`
+	Aggregate AggregateType     `yaml:"aggregate"` // sum, count, max
+	Labels    map[string]string `yaml:"labels"`
 }
 
 type RequestConfig struct {

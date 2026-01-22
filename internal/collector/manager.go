@@ -37,12 +37,16 @@ func NewManager(cfg *config.Config) *Manager {
 func (m *Manager) InitMetrics() {
 	for _, req := range m.cfg.Requests {
 		for _, metric := range req.Metrics {
+			labelKeys := []string{"api_path"}
+			for k := range metric.Labels {
+				labelKeys = append(labelKeys, k)
+			}
 			gauge := prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
 					Name: metric.Name,
 					Help: metric.Help,
 				},
-				[]string{"api_path"},
+				labelKeys,
 			)
 
 			prometheus.MustRegister(gauge)
@@ -129,24 +133,36 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	jsonStr := string(body)
 
 	for _, metric := range reqCfg.Metrics {
-		val := m.parseValue(jsonStr, metric)
+		val := m.parseValue(jsonStr, metric.Path, metric.Aggregate) // Simplified signature
+
+		labels := prometheus.Labels{"api_path": reqCfg.ApiPath}
+		for labelName, jsonPath := range metric.Labels {
+			res := gjson.Get(jsonStr, jsonPath)
+			labels[labelName] = res.String()
+		}
+
 		if gauge, ok := m.metricMap[metric.Name]; ok {
-			gauge.WithLabelValues(reqCfg.ApiPath).Set(val)
+			gauge.With(labels).Set(val)
 		}
 	}
 }
 
-func (m *Manager) parseValue(jsonStr string, metric config.MetricConfig) float64 {
-	result := gjson.Get(jsonStr, metric.Path)
+func (m *Manager) parseValue(jsonStr string, path string, agg config.AggregateType) float64 {
+	result := gjson.Get(jsonStr, path)
 
 	if !result.IsArray() {
 		return result.Float()
 	}
-
+	if result.Type == gjson.String {
+		t, err := time.Parse(time.RFC3339, result.String())
+		if err == nil {
+			return float64(t.Unix())
+		}
+	}
 	var val float64
 	results := result.Array()
 
-	switch metric.Aggregate {
+	switch agg {
 	case "count":
 		return float64(len(results))
 	case "max":
