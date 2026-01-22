@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ type Manager struct {
 	metricMap    map[string]*prometheus.GaugeVec
 	token        string
 	scrapeErrors prometheus.Counter
+	semaphore    chan struct{}
 }
 
 func NewManager(cfg *config.Config) *Manager {
@@ -31,6 +33,7 @@ func NewManager(cfg *config.Config) *Manager {
 			Name: "github_exporter_scrape_errors_total",
 			Help: "Total number of scrape errors",
 		}),
+		semaphore: make(chan struct{}, 10),
 	}
 }
 
@@ -49,23 +52,35 @@ func (m *Manager) InitMetrics() {
 				labelKeys,
 			)
 
-			prometheus.MustRegister(gauge)
+			if err := prometheus.Register(gauge); err != nil {
+				slog.Error("Failed to register metric", "name", metric.Name, "error", err)
+				continue
+			}
 			m.metricMap[metric.Name] = gauge
 		}
 	}
-	prometheus.MustRegister(m.scrapeErrors)
+	if err := prometheus.Register(m.scrapeErrors); err != nil {
+		slog.Error("Failed to register scrape errors counter", "error", err)
+	}
 }
 
-func (m *Manager) Start() {
+func (m *Manager) Start(ctx context.Context) {
 	slog.Info("Starting Collector. Interval", "interval", m.cfg.ScrapeInterval)
 
 	m.scrapeAll()
 
 	ticker := time.NewTicker(m.cfg.GetDuration())
 	go func() {
-		for range ticker.C {
-			slog.Info("Starting scheduled scrape")
-			m.scrapeAll()
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				slog.Info("Starting scheduled scrape")
+				m.scrapeAll()
+			case <-ctx.Done():
+				slog.Info("Stopping collector", "reason", ctx.Err())
+				return
+			}
 		}
 	}()
 }
@@ -75,7 +90,11 @@ func (m *Manager) scrapeAll() {
 	for _, req := range m.cfg.Requests {
 		wg.Add(1)
 		go func(r config.RequestConfig) {
-			defer wg.Done()
+			m.semaphore <- struct{}{}
+			defer func() {
+				<-m.semaphore
+				wg.Done()
+			}()
 			m.fetchAndProcess(r)
 		}(req)
 	}
