@@ -134,7 +134,7 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	jsonStr := string(body)
 
 	for _, metric := range reqCfg.Metrics {
-		val := m.parseValue(jsonStr, metric.Path, metric.Aggregate) // Simplified signature
+		val := m.parseValue(jsonStr, metric)
 
 		slog.Debug("Parsed metric", "name", metric.Name, "value", val)
 		labels := prometheus.Labels{"api_path": reqCfg.ApiPath}
@@ -149,26 +149,32 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 	}
 }
 
-func (m *Manager) parseValue(jsonStr string, path string, agg config.AggregateType) float64 {
-	result := gjson.Get(jsonStr, path)
+func (m *Manager) parseValue(jsonStr string, metric config.MetricConfig) float64 {
+	result := gjson.Get(jsonStr, metric.Path)
 
 	if !result.IsArray() {
-		return result.Float()
-	}
-	if result.Type == gjson.String {
-		t, err := time.Parse(time.RFC3339, result.String())
-		if err == nil {
-			slog.Debug("Parsed time", "value", result.String(), "unix", t.Unix())
-			return float64(t.Unix())
+
+		if metric.ValueType == config.TypeDate {
+			if result.Type == gjson.String {
+				t, err := time.Parse(time.RFC3339, result.String())
+				if err != nil {
+					slog.Error("Error parsing date for metric", "metric_name", metric.Name, "error", err)
+					return 0
+				}
+				return float64(t.Unix())
+			}
+			// If it's not a string, we can't parse a date
+			return 0
 		}
+		return result.Float()
 	}
 	var val float64
 	results := result.Array()
 
-	switch agg {
-	case "count":
+	switch metric.Aggregate {
+	case config.AggregateCount:
 		return float64(len(results))
-	case "max":
+	case config.AggregateMax:
 		if len(results) > 0 {
 			val = results[0].Float()
 			for _, r := range results[1:] {
@@ -177,7 +183,7 @@ func (m *Manager) parseValue(jsonStr string, path string, agg config.AggregateTy
 				}
 			}
 		}
-	case "sum": // default
+	case config.AggregateSum: // default
 		fallthrough
 	default:
 		for _, r := range results {

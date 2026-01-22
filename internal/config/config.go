@@ -11,7 +11,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type AggregateType string
+type (
+	AggregateType   string
+	MetricValueType string
+)
 
 const (
 	AggregateSum   AggregateType = "sum"
@@ -19,6 +22,9 @@ const (
 	AggregateMax   AggregateType = "max"
 
 	DefaultGitHubAPIURL = "https://api.github.com"
+
+	TypeFloat MetricValueType = "float"
+	TypeDate  MetricValueType = "date" // Parse ISO8601/RFC3339 to Unix Timestamp
 )
 
 type MetricConfig struct {
@@ -27,6 +33,7 @@ type MetricConfig struct {
 	Help      string            `yaml:"help"`
 	Aggregate AggregateType     `yaml:"aggregate"` // sum, count, max
 	Labels    map[string]string `yaml:"labels"`
+	ValueType MetricValueType   `yaml:"value_type"`
 }
 
 type RequestConfig struct {
