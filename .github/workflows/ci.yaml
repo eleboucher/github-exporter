@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -30,103 +33,56 @@ jobs:
         with:
           version: v2.6
           only-new-issues: true
-  build:
-    name: Build
-    if: github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip ci]')
-    strategy:
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            platform: linux/amd64
-            arch: amd64
-          - runner: ubuntu-24.04-arm
-            platform: linux/arm64
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-        with:
-          persist-credentials: false
 
-      - name: Commit timestamp
-        id: ts
-        run: echo "TIMESTAMP=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-      - name: Warm cache (no push) — ${{ matrix.platform }}
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: ${{ matrix.platform }}
-          push: false
-          build-args: |
-            COMMIT_TAG=${{ github.sha }}
-            BUILD_VERSION=main
-            SOURCE_DATE_EPOCH=${{ steps.ts.outputs.TIMESTAMP }}
-          cache-from: type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
-          provenance: false
-
-  publish:
-    name: Publish multi-arch image
-    needs: build
-    runs-on: ubuntu-24.04
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: golangci
     permissions:
       contents: read
       packages: write
-      id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v4
 
-      - name: Commit timestamp
-        id: ts
-        run: echo "TIMESTAMP=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Collect Docker metadata
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.DOCKER_HUB }}
-            ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=main
+            # Tag as 'latest' only on main branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            # Tag as 'pr-123' for PRs (useful for local testing, won't be pushed to registry)
+            type=ref,event=pr
+            # Tag with short SHA
             type=sha
-          labels: |
-            org.opencontainers.image.created=${{ steps.ts.outputs.TIMESTAMP }}
 
-      - name: Build & Push (multi-arch, single tag)
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: amd64,arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish Docker image
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
+          # Push only on main branch or tags, skip push on PRs
+          push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            COMMIT_TAG=${{ github.sha }}
-            BUILD_VERSION=main
-            SOURCE_DATE_EPOCH=${{ steps.ts.outputs.TIMESTAMP }}
-          labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: |
-            type=gha,scope=linux/amd64
-            type=gha,scope=linux/arm64
-          cache-to: type=gha,mode=max
-          provenance: false
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-to: type=gha,mode=min
+          cache-from: type=gha
