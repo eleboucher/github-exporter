@@ -149,7 +149,6 @@ func (m *Manager) fetchAndCollect(reqCfg config.RequestConfig, ch chan<- prometh
 		return
 	}
 	jsonStr := string(body)
-	slog.Debug("Fetched data", "url", url, "body", jsonStr)
 	for _, metric := range reqCfg.Metrics {
 		info, exists := m.metrics[metric.Name]
 		if !exists {
