@@ -92,7 +92,12 @@ func (m *Manager) fetchAndProcess(reqCfg config.RequestConfig) {
 		log.Printf("Error fetching %s: %v", url, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err = resp.Body.Close()
+		if err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	body, _ := io.ReadAll(resp.Body)
 	jsonStr := string(body)
