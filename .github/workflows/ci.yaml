@@ -67,10 +67,10 @@ jobs:
             # Tag with short SHA
             type=sha
 
-      # - name: Set up QEMU
-      #   uses: docker/setup-qemu-action@v3
-      #   with:
-      #     platforms: amd64 ,arm64
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: amd64 ,arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -81,7 +81,7 @@ jobs:
           context: .
           # Push only on main branch or tags, skip push on PRs
           push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64 # ,linux/arm64
+          platforms: linux/amd64, linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-to: type=gha,mode=min
