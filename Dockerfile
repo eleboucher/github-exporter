@@ -11,4 +11,4 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/github-exporter .
 USER nobody:nogroup
-CMD ["./github-exporter"]
+ENTRYPOINT ["/app/github-exporter"]
