@@ -1,7 +1,6 @@
 package collector
 
 import (
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -29,9 +28,17 @@ type Manager struct {
 }
 
 func NewManager(cfg *config.Config) *Manager {
+	// Create transport that disables caching
+	transport := &http.Transport{
+		DisableKeepAlives: true,
+	}
+
 	m := &Manager{
 		cfg:     cfg,
-		client:  &http.Client{Timeout: 10 * time.Second},
+		client:  &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: transport,
+		},
 		metrics: make(map[string]*MetricInfo),
 		token:   cfg.Token,
 	}
@@ -93,12 +100,6 @@ func (m *Manager) fetchAndCollect(reqCfg config.RequestConfig, ch chan<- prometh
 	path := strings.TrimLeft(reqCfg.ApiPath, "/")
 	url := m.cfg.GithubAPIURL + "/" + path
 
-	if strings.Contains(url, "?") {
-		url = fmt.Sprintf("%s&_t=%d", url, time.Now().Unix())
-	} else {
-		url = fmt.Sprintf("%s?_t=%d", url, time.Now().Unix())
-	}
-
 	method := reqCfg.Method
 	if method == "" {
 		method = "GET"
@@ -118,6 +119,7 @@ func (m *Manager) fetchAndCollect(reqCfg config.RequestConfig, ch chan<- prometh
 	req.Header.Set("User-Agent", "eleboucher-github-exporter/1.0")
 	req.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
 	if m.token != "" {
 		req.Header.Add("Authorization", "Bearer "+m.token)
@@ -137,6 +139,14 @@ func (m *Manager) fetchAndCollect(reqCfg config.RequestConfig, ch chan<- prometh
 			slog.Error("Error closing response body", "err", err)
 		}
 	}()
+
+	// Log cache-related headers to debug caching issues
+	slog.Debug("Response headers",
+		"url", url,
+		"etag", resp.Header.Get("ETag"),
+		"cache-control", resp.Header.Get("Cache-Control"),
+		"age", resp.Header.Get("Age"),
+		"x-github-request-id", resp.Header.Get("X-GitHub-Request-Id"))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		slog.Error("Non-200 status code from", "url", url, "status_code", resp.StatusCode)
