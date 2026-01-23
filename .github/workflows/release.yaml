@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.10.1
+        uses: sigstore/cosign-installer@v4.0.0
 
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@v0.2.5
@@ -117,7 +117,7 @@ jobs:
       contents: read
     steps:
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.10.1
+        uses: sigstore/cosign-installer@v4.0.0
 
       - name: Verify signature
         run: |
