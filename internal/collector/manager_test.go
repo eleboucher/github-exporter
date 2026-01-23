@@ -160,7 +160,9 @@ func TestCollect_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, `{"followers": 100, "public_repos": 50}`)
+		if _, err := io.WriteString(w, `{"followers": 100, "public_repos": 50}`); err != nil {
+			t.Errorf("Failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -210,10 +212,12 @@ func TestCollect_WithLabels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, `[
+		if _, err := io.WriteString(w, `[
 			{"type": "PushEvent", "repo": {"name": "user/repo1"}, "created_at": "2024-01-15T10:30:00Z"},
 			{"type": "IssueEvent", "repo": {"name": "user/repo2"}, "created_at": "2024-01-14T10:30:00Z"}
-		]`)
+		]`); err != nil {
+			t.Errorf("Failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -322,7 +326,9 @@ func TestCollect_POSTRequest(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, `{"data": {"user": {"contributionsCollection": {"contributionCalendar": {"totalContributions": 365}}}}}`)
+		if _, err := io.WriteString(w, `{"data": {"user": {"contributionsCollection": {"contributionCalendar": {"totalContributions": 365}}}}}`); err != nil {
+			t.Errorf("Failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
