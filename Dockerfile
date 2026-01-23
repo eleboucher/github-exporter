@@ -33,7 +33,7 @@ COPY --from=builder /app/github-exporter .
 LABEL org.opencontainers.image.title="github-exporter" \
       org.opencontainers.image.description="Prometheus exporter for GitHub metrics" \
       org.opencontainers.image.source="https://github.com/eleboucher/github-exporter" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="APACHE-2.0" \
 
 # Run as non-root user
 USER nobody:nogroup
