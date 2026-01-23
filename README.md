@@ -4,7 +4,7 @@
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
 ![License](https://img.shields.io/badge/license-Apache2-green)
 
-A **generic, configuration-driven** Prometheus exporter for GitHub.
+A **generic, configuration-driven, lightweight** Prometheus exporter for GitHub.
 
 Unlike standard exporters that hardcode specific metrics (e.g., just "stars" or "forks"), this exporter acts as a **bridge between the GitHub API and Prometheus**. You define *what* you want to measure in YAML using JSON paths and GraphQL queries, and the exporter handles the authentication, scraping, and metric exposure.
 
