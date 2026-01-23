@@ -64,8 +64,14 @@ requests:
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
-	os.Setenv("GITHUB_TOKEN", "test-token-123")
-	defer os.Unsetenv("GITHUB_TOKEN")
+	if err := os.Setenv("GITHUB_TOKEN", "test-token-123"); err != nil {
+		t.Fatalf("Failed to set GITHUB_TOKEN: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("GITHUB_TOKEN"); err != nil {
+			t.Errorf("Failed to unset GITHUB_TOKEN: %v", err)
+		}
+	}()
 
 	cfg, err := Load(configPath, "")
 	if err != nil {
@@ -78,6 +84,19 @@ requests:
 }
 
 func TestLoad_WithCustomAPIURL(t *testing.T) {
+	// Unset any existing GITHUB_API_URL env var to avoid interference
+	originalAPIURL := os.Getenv("GITHUB_API_URL")
+	if err := os.Unsetenv("GITHUB_API_URL"); err != nil {
+		t.Fatalf("Failed to unset GITHUB_API_URL: %v", err)
+	}
+	defer func() {
+		if originalAPIURL != "" {
+			if err := os.Setenv("GITHUB_API_URL", originalAPIURL); err != nil {
+				t.Errorf("Failed to restore GITHUB_API_URL: %v", err)
+			}
+		}
+	}()
+
 	content := `
 github_api_url: "https://github.example.com/api/v3"
 requests:
@@ -105,6 +124,19 @@ requests:
 }
 
 func TestLoad_TrailingSlashRemoval(t *testing.T) {
+	// Unset any existing GITHUB_API_URL env var to avoid interference
+	originalAPIURL := os.Getenv("GITHUB_API_URL")
+	if err := os.Unsetenv("GITHUB_API_URL"); err != nil {
+		t.Fatalf("Failed to unset GITHUB_API_URL: %v", err)
+	}
+	defer func() {
+		if originalAPIURL != "" {
+			if err := os.Setenv("GITHUB_API_URL", originalAPIURL); err != nil {
+				t.Errorf("Failed to restore GITHUB_API_URL: %v", err)
+			}
+		}
+	}()
+
 	content := `
 github_api_url: "https://api.github.com/"
 requests:
@@ -263,8 +295,14 @@ func TestLoad_FileNotFound(t *testing.T) {
 }
 
 func TestGetEnvMap(t *testing.T) {
-	os.Setenv("TEST_VAR", "test_value")
-	defer os.Unsetenv("TEST_VAR")
+	if err := os.Setenv("TEST_VAR", "test_value"); err != nil {
+		t.Fatalf("Failed to set TEST_VAR: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("TEST_VAR"); err != nil {
+			t.Errorf("Failed to unset TEST_VAR: %v", err)
+		}
+	}()
 
 	envMap := getEnvMap("testuser")
 
