@@ -18,7 +18,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -o github-exporter
 
 # Run Stage - using pinned alpine version
-FROM alpine:3.21
+FROM alpine:3.23
 
 
 # Install CA certificates (required for HTTPS calls to GitHub API)
