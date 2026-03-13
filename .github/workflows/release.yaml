@@ -75,7 +75,7 @@ jobs:
             type=raw,value=latest
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: amd64,arm64
 
