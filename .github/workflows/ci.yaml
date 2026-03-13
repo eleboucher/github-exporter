@@ -102,7 +102,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and publish Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           # Push only on main branch or tags, skip push on PRs
